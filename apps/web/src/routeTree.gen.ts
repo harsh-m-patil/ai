@@ -11,6 +11,8 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as ConversationsRouteImport } from './routes/conversations'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ConversationsIndexRouteImport } from './routes/conversations.index'
+import { Route as ConversationsIdRouteImport } from './routes/conversations.$id'
 
 const ConversationsRoute = ConversationsRouteImport.update({
   id: '/conversations',
@@ -22,31 +24,51 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ConversationsIndexRoute = ConversationsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => ConversationsRoute,
+} as any)
+const ConversationsIdRoute = ConversationsIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => ConversationsRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/conversations': typeof ConversationsRoute
+  '/conversations': typeof ConversationsRouteWithChildren
+  '/conversations/$id': typeof ConversationsIdRoute
+  '/conversations/': typeof ConversationsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/conversations': typeof ConversationsRoute
+  '/conversations/$id': typeof ConversationsIdRoute
+  '/conversations': typeof ConversationsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
-  '/conversations': typeof ConversationsRoute
+  '/conversations': typeof ConversationsRouteWithChildren
+  '/conversations/$id': typeof ConversationsIdRoute
+  '/conversations/': typeof ConversationsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/conversations'
+  fullPaths: '/' | '/conversations' | '/conversations/$id' | '/conversations/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/conversations'
-  id: '__root__' | '/' | '/conversations'
+  to: '/' | '/conversations/$id' | '/conversations'
+  id:
+    | '__root__'
+    | '/'
+    | '/conversations'
+    | '/conversations/$id'
+    | '/conversations/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
-  ConversationsRoute: typeof ConversationsRoute
+  ConversationsRoute: typeof ConversationsRouteWithChildren
 }
 
 declare module '@tanstack/react-router' {
@@ -65,12 +87,40 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/conversations/': {
+      id: '/conversations/'
+      path: '/'
+      fullPath: '/conversations/'
+      preLoaderRoute: typeof ConversationsIndexRouteImport
+      parentRoute: typeof ConversationsRoute
+    }
+    '/conversations/$id': {
+      id: '/conversations/$id'
+      path: '/$id'
+      fullPath: '/conversations/$id'
+      preLoaderRoute: typeof ConversationsIdRouteImport
+      parentRoute: typeof ConversationsRoute
+    }
   }
 }
 
+interface ConversationsRouteChildren {
+  ConversationsIdRoute: typeof ConversationsIdRoute
+  ConversationsIndexRoute: typeof ConversationsIndexRoute
+}
+
+const ConversationsRouteChildren: ConversationsRouteChildren = {
+  ConversationsIdRoute: ConversationsIdRoute,
+  ConversationsIndexRoute: ConversationsIndexRoute,
+}
+
+const ConversationsRouteWithChildren = ConversationsRoute._addFileChildren(
+  ConversationsRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  ConversationsRoute: ConversationsRoute,
+  ConversationsRoute: ConversationsRouteWithChildren,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
