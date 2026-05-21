@@ -1,0 +1,3 @@
+# Runtime API owns conversations; SDK owns inference
+
+The `apps/runtime-api` service will own conversation persistence, turn orchestration, context selection, cancellation, and retry policy, while `packages/ai` will only perform inference over normalized request context. We chose this boundary so the SDK remains reusable and request-first, while the application-specific concepts of conversations, turns, and committed assistant messages stay in the runtime layer that persists them.

@@ -1,0 +1,3 @@
+# Request-first provider-agnostic AI SDK
+
+We will build `packages/ai` as a request-first SDK with a small public API such as `stream(model, context, options)` and `complete(model, context, options)`. The SDK will accept normalized inference context rather than owning chat conversations so that it stays provider-agnostic, reusable outside the demo chat app, and focused on inference rather than application workflow.
