@@ -40,13 +40,13 @@ import {
   TableHeader,
   TableRow,
 } from "@tardis/ui/components/table";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@tardis/ui/components/tabs";
 import {
-  Activity,
-  Clock,
-  Hash,
-  Zap,
-} from "lucide-react";
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@tardis/ui/components/tabs";
+import { Activity, Clock, Hash, Zap } from "lucide-react";
 
 export function ObservabilityScreen({
   inferenceRequests,
@@ -65,15 +65,26 @@ export function ObservabilityScreen({
   metricsByRequestId?: Record<string, InferenceRequestMetrics>;
   usageByRequestId?: Record<string, number | null>;
 }) {
-  const [hoveredRequestId, setHoveredRequestId] = useState<string | undefined>();
-  const activeRequestId = hoveredRequestId ?? selectedRequestId ?? inferenceRequests[0]?.id;
+  const [hoveredRequestId, setHoveredRequestId] = useState<
+    string | undefined
+  >();
+  const activeRequestId =
+    hoveredRequestId ?? selectedRequestId ?? inferenceRequests[0]?.id;
   const selectedRequest =
-    inferenceRequests.find((request) => request.id === activeRequestId) ?? inferenceRequests[0] ?? null;
+    inferenceRequests.find((request) => request.id === activeRequestId) ??
+    inferenceRequests[0] ??
+    null;
   const usage =
     selectedRequest?.id === inspection?.inferenceRequest.id
       ? inspection.summary.usage
-      : { totalTokens: selectedRequest ? usageByRequestId[selectedRequest.id] ?? null : null };
-  const activeMetrics = selectedRequest ? metricsByRequestId[selectedRequest.id] ?? metrics : metrics;
+      : {
+          totalTokens: selectedRequest
+            ? (usageByRequestId[selectedRequest.id] ?? null)
+            : null,
+        };
+  const activeMetrics = selectedRequest
+    ? (metricsByRequestId[selectedRequest.id] ?? metrics)
+    : metrics;
 
   const chartData = useMemo(
     () =>
@@ -82,13 +93,15 @@ export function ObservabilityScreen({
           id: request.id,
           requestLabel: request.id.slice(0, 8),
           totalDurationMs:
-            metricsByRequestId[request.id]?.totalDurationMs ?? computeDurationFromRequest(request),
-          firstTokenLatencyMs: metricsByRequestId[request.id]?.firstTokenLatencyMs,
+            metricsByRequestId[request.id]?.totalDurationMs ??
+            computeDurationFromRequest(request),
+          firstTokenLatencyMs:
+            metricsByRequestId[request.id]?.firstTokenLatencyMs,
           totalTokens: usageByRequestId[request.id],
           order: inferenceRequests.length - index,
         }))
         .reverse(),
-    [inferenceRequests, metricsByRequestId, usageByRequestId],
+    [inferenceRequests, metricsByRequestId, usageByRequestId]
   );
 
   const summaryStats = useMemo(() => {
@@ -104,8 +117,12 @@ export function ObservabilityScreen({
 
     return {
       totalRequests: inferenceRequests.length,
-      avgDuration: durations.length ? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length) : null,
-      avgLatency: latencies.length ? Math.round(latencies.reduce((a, b) => a + b, 0) / latencies.length) : null,
+      avgDuration: durations.length
+        ? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length)
+        : null,
+      avgLatency: latencies.length
+        ? Math.round(latencies.reduce((a, b) => a + b, 0) / latencies.length)
+        : null,
       totalTokens: tokens.length ? tokens.reduce((a, b) => a + b, 0) : null,
     };
   }, [chartData, inferenceRequests.length]);
@@ -115,54 +132,67 @@ export function ObservabilityScreen({
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Observability</h1>
         <p className="text-sm text-muted-foreground">
-          Monitor inference performance, latency, and token usage across requests.
+          Monitor inference performance, latency, and token usage across
+          requests.
         </p>
       </div>
 
       {/* KPI Summary Cards */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Card>
+        <Card className="rounded-xl">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardDescription>Total Requests</CardDescription>
             <Hash className="size-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{summaryStats.totalRequests}</div>
-            <p className="text-xs text-muted-foreground">completed inference requests</p>
+            <div className="text-2xl font-bold">
+              {summaryStats.totalRequests}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              completed inference requests
+            </p>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="rounded-xl">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardDescription>Avg Duration</CardDescription>
             <Clock className="size-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {summaryStats.avgDuration !== null ? `${summaryStats.avgDuration} ms` : "—"}
+              {summaryStats.avgDuration !== null
+                ? `${summaryStats.avgDuration} ms`
+                : "—"}
             </div>
             <p className="text-xs text-muted-foreground">mean total duration</p>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="rounded-xl">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardDescription>Avg First Token</CardDescription>
             <Zap className="size-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {summaryStats.avgLatency !== null ? `${summaryStats.avgLatency} ms` : "—"}
+              {summaryStats.avgLatency !== null
+                ? `${summaryStats.avgLatency} ms`
+                : "—"}
             </div>
-            <p className="text-xs text-muted-foreground">mean first-token latency</p>
+            <p className="text-xs text-muted-foreground">
+              mean first-token latency
+            </p>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="rounded-xl">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardDescription>Total Tokens</CardDescription>
             <Activity className="size-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {summaryStats.totalTokens !== null ? summaryStats.totalTokens.toLocaleString() : "—"}
+              {summaryStats.totalTokens !== null
+                ? summaryStats.totalTokens.toLocaleString()
+                : "—"}
             </div>
             <p className="text-xs text-muted-foreground">across all requests</p>
           </CardContent>
@@ -171,7 +201,10 @@ export function ObservabilityScreen({
 
       {/* Charts */}
       <div className="grid gap-4 lg:grid-cols-2">
-        <Card onMouseLeave={() => setHoveredRequestId(undefined)}>
+        <Card
+          className="rounded-xl"
+          onMouseLeave={() => setHoveredRequestId(undefined)}
+        >
           <CardHeader>
             <CardTitle>Latency Trends</CardTitle>
             <CardDescription>
@@ -197,7 +230,9 @@ export function ObservabilityScreen({
                   margin: { top: 8, right: 12, left: 12, bottom: 8 },
                   onMouseMove: (state) => {
                     const index = getActiveTooltipIndex(state);
-                    setHoveredRequestId(index === null ? undefined : chartData[index]?.id);
+                    setHoveredRequestId(
+                      index === null ? undefined : chartData[index]?.id
+                    );
                   },
                 }}
               >
@@ -206,16 +241,29 @@ export function ObservabilityScreen({
                 <ChartYAxis />
                 <ChartTooltip />
                 <ChartLegend />
-                <ChartBar dataKey="totalDurationMs" variant="gradient" radius={8} />
-                <ChartLine dataKey="firstTokenLatencyMs" glow strokeVariant="solid" />
+                <ChartBar
+                  dataKey="totalDurationMs"
+                  variant="gradient"
+                  radius={8}
+                />
+                <ChartLine
+                  dataKey="firstTokenLatencyMs"
+                  glow
+                  strokeVariant="solid"
+                />
               </EvilComposedChart>
             ) : (
-              <p className="py-8 text-center text-sm text-muted-foreground">No chart data yet.</p>
+              <p className="py-8 text-center text-sm text-muted-foreground">
+                No chart data yet.
+              </p>
             )}
           </CardContent>
         </Card>
 
-        <Card onMouseLeave={() => setHoveredRequestId(undefined)}>
+        <Card
+          className="rounded-xl"
+          onMouseLeave={() => setHoveredRequestId(undefined)}
+        >
           <CardHeader>
             <CardTitle>Token Usage</CardTitle>
             <CardDescription>
@@ -223,7 +271,10 @@ export function ObservabilityScreen({
             </CardDescription>
           </CardHeader>
           <CardContent>
-            {chartData.some((entry) => entry.totalTokens !== null && entry.totalTokens !== undefined) ? (
+            {chartData.some(
+              (entry) =>
+                entry.totalTokens !== null && entry.totalTokens !== undefined
+            ) ? (
               <EvilBarChart
                 className="h-72"
                 data={chartData}
@@ -237,7 +288,9 @@ export function ObservabilityScreen({
                   margin: { top: 8, right: 12, left: 12, bottom: 8 },
                   onMouseMove: (state) => {
                     const index = getActiveTooltipIndex(state);
-                    setHoveredRequestId(index === null ? undefined : chartData[index]?.id);
+                    setHoveredRequestId(
+                      index === null ? undefined : chartData[index]?.id
+                    );
                   },
                 }}
               >
@@ -258,7 +311,7 @@ export function ObservabilityScreen({
 
       {/* Request Table + Detail Panel */}
       <div className="grid gap-4 lg:grid-cols-[1fr_380px]">
-        <Card>
+        <Card className="rounded-xl">
           <CardHeader>
             <CardTitle>Inference Requests</CardTitle>
             <CardDescription>
@@ -290,16 +343,29 @@ export function ObservabilityScreen({
                       className="cursor-pointer"
                       onClick={() => onRequestSelect?.(request.id)}
                     >
-                      <TableCell className="font-mono text-xs">{request.id.slice(0, 12)}</TableCell>
+                      <TableCell className="font-mono text-xs">
+                        {request.id.slice(0, 12)}
+                      </TableCell>
                       <TableCell>{request.provider}</TableCell>
-                      <TableCell className="max-w-[200px] truncate">{request.model}</TableCell>
+                      <TableCell className="max-w-[200px] truncate">
+                        {request.model}
+                      </TableCell>
                       <TableCell>
-                        <Badge variant={request.status === "completed" ? "default" : "outline"}>
+                        <Badge
+                          variant={
+                            request.status === "completed"
+                              ? "default"
+                              : "outline"
+                          }
+                        >
                           {request.status}
                         </Badge>
                       </TableCell>
                       <TableCell className="text-right font-mono">
-                        {formatMetric(reqMetrics?.totalDurationMs ?? computeDurationFromRequest(request))}
+                        {formatMetric(
+                          reqMetrics?.totalDurationMs ??
+                            computeDurationFromRequest(request)
+                        )}
                       </TableCell>
                       <TableCell className="text-right font-mono">
                         {reqTokens ?? "—"}
@@ -316,7 +382,9 @@ export function ObservabilityScreen({
           <CardHeader>
             <CardTitle>Request Detail</CardTitle>
             {selectedRequest && (
-              <CardDescription className="font-mono">{selectedRequest.id}</CardDescription>
+              <CardDescription className="font-mono">
+                {selectedRequest.id}
+              </CardDescription>
             )}
           </CardHeader>
           <CardContent>
@@ -328,29 +396,58 @@ export function ObservabilityScreen({
                 </TabsList>
                 <TabsContent value="metrics" className="space-y-4 pt-4">
                   <div className="space-y-3">
-                    <MetricRow label="First-token latency" value={formatMetric(activeMetrics?.firstTokenLatencyMs)} />
+                    <MetricRow
+                      label="First-token latency"
+                      value={formatMetric(activeMetrics?.firstTokenLatencyMs)}
+                    />
                     <Separator />
-                    <MetricRow label="Total duration" value={formatMetric(activeMetrics?.totalDurationMs)} />
+                    <MetricRow
+                      label="Total duration"
+                      value={formatMetric(activeMetrics?.totalDurationMs)}
+                    />
                     <Separator />
-                    <MetricRow label="Total tokens" value={usage?.totalTokens != null ? String(usage.totalTokens) : "—"} />
+                    <MetricRow
+                      label="Total tokens"
+                      value={
+                        usage?.totalTokens != null
+                          ? String(usage.totalTokens)
+                          : "—"
+                      }
+                    />
                     <Separator />
-                    <MetricRow label="Event count" value={activeMetrics?.eventCount != null ? String(activeMetrics.eventCount) : "—"} />
+                    <MetricRow
+                      label="Event count"
+                      value={
+                        activeMetrics?.eventCount != null
+                          ? String(activeMetrics.eventCount)
+                          : "—"
+                      }
+                    />
                   </div>
                 </TabsContent>
                 <TabsContent value="context" className="space-y-4 pt-4">
                   <div className="space-y-3">
-                    <MetricRow label="Provider" value={selectedRequest.provider} />
+                    <MetricRow
+                      label="Provider"
+                      value={selectedRequest.provider}
+                    />
                     <Separator />
                     <MetricRow label="Model" value={selectedRequest.model} />
                     <Separator />
                     <div className="space-y-1">
-                      <p className="text-xs text-muted-foreground">Conversation</p>
-                      <p className="font-mono text-xs">{selectedRequest.conversationId}</p>
+                      <p className="text-xs text-muted-foreground">
+                        Conversation
+                      </p>
+                      <p className="font-mono text-xs">
+                        {selectedRequest.conversationId}
+                      </p>
                     </div>
                     <Separator />
                     <div className="space-y-1">
                       <p className="text-xs text-muted-foreground">Turn</p>
-                      <p className="font-mono text-xs">{selectedRequest.turnId}</p>
+                      <p className="font-mono text-xs">
+                        {selectedRequest.turnId}
+                      </p>
                     </div>
                     <Separator />
                     <a
@@ -396,7 +493,9 @@ function computeDurationFromRequest(request: ObservableInferenceRequest) {
     return null;
   }
 
-  return new Date(request.endedAt).getTime() - new Date(request.startedAt).getTime();
+  return (
+    new Date(request.endedAt).getTime() - new Date(request.startedAt).getTime()
+  );
 }
 
 function getActiveTooltipIndex(state: unknown) {
