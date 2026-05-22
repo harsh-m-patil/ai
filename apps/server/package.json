@@ -11,6 +11,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@ai/ai": "workspace:*",
     "@ai/db": "workspace:*",
     "@ai/env": "workspace:*",
     "@hono/node-server": "^1.14.4",

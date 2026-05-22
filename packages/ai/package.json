@@ -1,0 +1,26 @@
+{
+  "name": "@ai/ai",
+  "type": "module",
+  "exports": {
+    ".": {
+      "default": "./src/index.ts"
+    },
+    "./*": {
+      "default": "./src/*.ts"
+    }
+  },
+  "scripts": {
+    "check-types": "tsc -b",
+    "test": "vitest run"
+  },
+  "peerDependencies": {
+    "openai": "^6.0.0"
+  },
+  "devDependencies": {
+    "@ai/config": "workspace:*",
+    "@types/node": "catalog:",
+    "openai": "^6.0.0",
+    "typescript": "catalog:",
+    "vitest": "^4.1.7"
+  }
+}

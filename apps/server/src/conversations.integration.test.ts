@@ -117,7 +117,7 @@ describe("Conversation API", () => {
   it("uses an injected provider so the assistant reply reflects the provider's response", async () => {
     const customProvider = {
       name: "custom",
-      model: "custom-model",
+      defaultModel: "custom-model",
       complete: async () => "Hello from custom provider!",
     };
     const customDir = await mkdtemp(join(tmpdir(), "ai-server-custom-"));
@@ -142,6 +142,36 @@ describe("Conversation API", () => {
       expect(inferenceRequest.model).toBe("custom-model");
     } finally {
       await rm(customDir, { recursive: true, force: true });
+    }
+  });
+
+  it("returns 500 when inference provider fails", async () => {
+    const failingProvider = {
+      name: "broken",
+      defaultModel: "broken-model",
+      complete: async () => {
+        throw new Error("boom");
+      },
+    };
+    const failingDir = await mkdtemp(join(tmpdir(), "ai-server-failing-"));
+    const failingApp = await createApp({
+      databaseUrl: `file:${join(failingDir, "test.db")}`,
+      provider: failingProvider,
+    });
+
+    try {
+      const createRes = await failingApp.request("/conversations", { method: "POST" });
+      const { conversation } = await json(createRes);
+
+      const msgRes = await failingApp.request(`/conversations/${conversation.id}/messages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: "Hi" }),
+      });
+
+      expect(msgRes.status).toBe(500);
+    } finally {
+      await rm(failingDir, { recursive: true, force: true });
     }
   });
 

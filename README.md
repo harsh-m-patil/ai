@@ -81,10 +81,12 @@ If you want to add app-specific blocks instead of shared primitives, run the sha
 ai/
 ├── apps/
 │   ├── web/         # Frontend application (React + TanStack Router)
-│   └── server/      # Backend API (Hono)
+│   ├── server/      # Backend API (Hono)
+│   └── demo/        # CLI demo for @ai/ai SDK
 ├── packages/
 │   ├── ui/          # Shared shadcn/ui components and styles
-│   └── db/          # Database schema & queries
+│   ├── db/          # Database schema & queries
+│   └── ai/          # Provider-agnostic AI SDK
 ```
 
 ## Available Scripts
@@ -93,6 +95,7 @@ ai/
 - `pnpm run build`: Build all applications
 - `pnpm run dev:web`: Start only the web application
 - `pnpm run dev:server`: Start only the server
+- `pnpm -F demo start -- "<prompt>"`: Run the AI SDK demo CLI
 - `pnpm run check-types`: Check TypeScript types across all apps
 - `pnpm run db:push`: Push schema changes to database
 - `pnpm run db:generate`: Generate database client/types
