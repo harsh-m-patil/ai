@@ -7,6 +7,7 @@ import {
   getInferenceRequestInspection,
   getInferenceRequestMetrics,
   listConversations,
+  listInferenceRequests,
   listMessages,
   migrate,
   type TelemetryConfig,
@@ -112,6 +113,11 @@ export async function createApp(options?: {
       console.error("Inference failed", error);
       return c.json({ error: "Inference failed", details: message }, 500);
     }
+  });
+
+  app.get("/inference-requests", async (c) => {
+    const inferenceRequests = await listInferenceRequests(db);
+    return c.json({ inferenceRequests });
   });
 
   app.get("/inference-requests/:id", async (c) => {

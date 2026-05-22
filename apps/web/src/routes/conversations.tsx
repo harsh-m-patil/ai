@@ -1,6 +1,6 @@
 import { Link, Outlet, createFileRoute, useNavigate, useRouter } from "@tanstack/react-router";
 import { useState, useSyncExternalStore } from "react";
-import { MessageSquare, Plus, Sparkles } from "lucide-react";
+import { Activity, MessageSquare, Plus, Sparkles } from "lucide-react";
 
 import { Button } from "@tardis/ui/components/button";
 import { Skeleton } from "@tardis/ui/components/skeleton";
@@ -84,7 +84,7 @@ function ConversationsLayout() {
             </Link>
             <ModeToggle />
           </div>
-          <div className="px-2">
+          <div className="space-y-2 px-2">
             <Button
               onClick={handleCreate}
               disabled={creating}
@@ -94,6 +94,15 @@ function ConversationsLayout() {
             >
               <Plus className="size-3.5" />
               {creating ? "Creating..." : "New Chat"}
+            </Button>
+            <Button
+              variant="ghost"
+              className="w-full justify-start rounded-lg"
+              size="sm"
+              render={<Link to="/observability" />}
+            >
+              <Activity className="size-3.5" />
+              Observability
             </Button>
           </div>
         </SidebarHeader>

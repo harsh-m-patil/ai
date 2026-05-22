@@ -269,6 +269,35 @@ describe("Conversation API", () => {
     }
   });
 
+  it("GET /inference-requests lists completed Inference Requests with conversation context", async () => {
+    const createRes = await app.request("/conversations", { method: "POST" });
+    const { conversation } = await json(createRes);
+
+    const msgRes = await app.request(`/conversations/${conversation.id}/messages`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content: "Observe this request" }),
+    });
+
+    expect(msgRes.status).toBe(201);
+    const { inferenceRequest, turn } = await json(msgRes);
+
+    const listRes = await app.request("/inference-requests");
+    expect(listRes.status).toBe(200);
+
+    const listBody = await json(listRes);
+    expect(listBody.inferenceRequests).toEqual([
+      expect.objectContaining({
+        id: inferenceRequest.id,
+        conversationId: conversation.id,
+        turnId: turn.id,
+        provider: expect.any(String),
+        model: expect.any(String),
+        status: "completed",
+      }),
+    ]);
+  });
+
   it("GET /inference-requests/:id returns inspection detail for an Inference Request", async () => {
     const createRes = await app.request("/conversations", { method: "POST" });
     const { conversation } = await json(createRes);
