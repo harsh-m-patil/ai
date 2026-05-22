@@ -2,6 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { createAiSdk } from "@ai/ai";
 
 import { createApp } from "./app";
 
@@ -12,10 +13,18 @@ describe("Conversation API", () => {
   let directory: string;
   let app: Awaited<ReturnType<typeof createApp>>;
 
+  const testSdk = createAiSdk([
+    {
+      name: "openrouter",
+      defaultModel: "openai/gpt-4o",
+      complete: async () => "I am a deterministic test response.",
+    },
+  ]);
+
   beforeEach(async () => {
     directory = await mkdtemp(join(tmpdir(), "ai-server-test-"));
     const databaseUrl = `file:${join(directory, "test.db")}`;
-    app = await createApp({ databaseUrl });
+    app = await createApp({ databaseUrl, aiSdk: testSdk });
   });
 
   afterEach(async () => {
@@ -115,15 +124,17 @@ describe("Conversation API", () => {
   });
 
   it("uses an injected provider so the assistant reply reflects the provider's response", async () => {
-    const customProvider = {
-      name: "custom",
-      defaultModel: "custom-model",
-      complete: async () => "Hello from custom provider!",
-    };
+    const customSdk = createAiSdk([
+      {
+        name: "openrouter",
+        defaultModel: "openai/gpt-4o",
+        complete: async () => "Hello from custom provider!",
+      },
+    ]);
     const customDir = await mkdtemp(join(tmpdir(), "ai-server-custom-"));
     const customApp = await createApp({
       databaseUrl: `file:${join(customDir, "test.db")}`,
-      provider: customProvider,
+      aiSdk: customSdk,
     });
 
     try {
@@ -138,25 +149,27 @@ describe("Conversation API", () => {
 
       const { message, inferenceRequest } = await json(msgRes);
       expect(message.content).toBe("Hello from custom provider!");
-      expect(inferenceRequest.provider).toBe("custom");
-      expect(inferenceRequest.model).toBe("custom-model");
+      expect(inferenceRequest.provider).toBe("openrouter");
+      expect(inferenceRequest.model).toBe("openai/gpt-4o");
     } finally {
       await rm(customDir, { recursive: true, force: true });
     }
   });
 
   it("returns 500 when inference provider fails", async () => {
-    const failingProvider = {
-      name: "broken",
-      defaultModel: "broken-model",
-      complete: async () => {
-        throw new Error("boom");
+    const failingSdk = createAiSdk([
+      {
+        name: "openrouter",
+        defaultModel: "openai/gpt-4o",
+        complete: async () => {
+          throw new Error("boom");
+        },
       },
-    };
+    ]);
     const failingDir = await mkdtemp(join(tmpdir(), "ai-server-failing-"));
     const failingApp = await createApp({
       databaseUrl: `file:${join(failingDir, "test.db")}`,
-      provider: failingProvider,
+      aiSdk: failingSdk,
     });
 
     try {
