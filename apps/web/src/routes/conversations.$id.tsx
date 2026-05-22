@@ -2,12 +2,17 @@ import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { ArrowUp, Bot, User } from "lucide-react";
+import { Streamdown } from "streamdown";
 
 import { Button } from "@tardis/ui/components/button";
 import { Skeleton } from "@tardis/ui/components/skeleton";
 import { Textarea } from "@tardis/ui/components/textarea";
 
-import { type Message, continueConversation, listMessages } from "@/lib/api";
+import { type Message, continueConversationStream, listMessages } from "@/lib/api";
+import {
+  deriveConversationTitle,
+  setPendingConversationTitle,
+} from "@/lib/conversation-titles";
 import { consumePendingMessage } from "@/lib/pending-message";
 
 export const Route = createFileRoute("/conversations/$id")({
@@ -57,7 +62,7 @@ function ConversationPage() {
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [allMessages.length]);
+  }, [allMessages]);
 
   useEffect(() => {
     setOptimisticMessages([]);
@@ -74,6 +79,11 @@ function ConversationPage() {
   }, []);
 
   async function sendMessage(content: string) {
+    const isFirstUserMessage = serverMessages.length === 0 && optimisticMessages.length === 0;
+    if (isFirstUserMessage) {
+      setPendingConversationTitle(id, deriveConversationTitle(content));
+    }
+
     const optimisticUserMsg: OptimisticMessage = {
       id: `optimistic-user-${Date.now()}`,
       role: "user",
@@ -81,8 +91,9 @@ function ConversationPage() {
       createdAt: new Date().toISOString(),
     };
 
+    const optimisticAssistantId = `optimistic-assistant-${Date.now()}`;
     const optimisticAssistantMsg: OptimisticMessage = {
-      id: `optimistic-assistant-${Date.now()}`,
+      id: optimisticAssistantId,
       role: "assistant",
       content: "",
       createdAt: new Date().toISOString(),
@@ -93,7 +104,36 @@ function ConversationPage() {
     setSending(true);
 
     try {
-      await continueConversation(id, content);
+      await continueConversationStream(id, content, {
+        onAssistantDelta: (delta) => {
+          setOptimisticMessages((current) =>
+            current.map((message) => {
+              if (message.id !== optimisticAssistantId) {
+                return message;
+              }
+
+              return {
+                ...message,
+                content: `${message.content}${delta}`,
+              };
+            }),
+          );
+        },
+      });
+
+      setOptimisticMessages((current) =>
+        current.map((message) => {
+          if (message.id !== optimisticAssistantId) {
+            return message;
+          }
+
+          return {
+            ...message,
+            pending: false,
+          };
+        }),
+      );
+
       await router.invalidate();
     } catch {
       toast.error("Failed to send message");
@@ -166,7 +206,7 @@ function ConversationPage() {
 function MessageBlock({ message }: { message: OptimisticMessage }) {
   const isUser = message.role === "user";
 
-  if (message.pending) {
+  if (message.pending && message.content.length === 0) {
     return (
       <div className="flex gap-3">
         <div className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-foreground/5 border border-border/50">
@@ -192,8 +232,9 @@ function MessageBlock({ message }: { message: OptimisticMessage }) {
         <p className="mb-1 text-xs font-medium text-muted-foreground">
           {isUser ? "You" : "Assistant"}
         </p>
-        <div className="prose prose-sm dark:prose-invert max-w-none">
-          <p className="whitespace-pre-wrap text-sm leading-relaxed">{message.content}</p>
+        <div className="prose prose-sm dark:prose-invert max-w-none text-sm leading-relaxed">
+          <Streamdown>{message.content}</Streamdown>
+          {message.pending ? <span className="ml-0.5 inline-block animate-pulse">▍</span> : null}
         </div>
       </div>
     </div>

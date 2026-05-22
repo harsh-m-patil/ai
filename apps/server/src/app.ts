@@ -1,5 +1,14 @@
 import { createAiSdk, createOpenAICompatibleAdapter, type AiSdk } from "@tardis/ai";
-import { createDb, createConversation, listConversations, listMessages, continueConversation, migrate } from "@tardis/db";
+import {
+  continueConversation,
+  createConversation,
+  createDb,
+  getConversation,
+  getInferenceRequestMetrics,
+  listConversations,
+  listMessages,
+  migrate,
+} from "@tardis/db";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
@@ -19,7 +28,11 @@ export async function createApp(options?: {
 
   const provider = createOpenAICompatibleAdapter({
     name: "openrouter",
-    defaultModel: options?.model ?? process.env.OPENAI_MODEL ?? "nvidia/nemotron-3-super-120b-a12b:free",
+    defaultModel:
+      options?.model ??
+      process.env.OPENROUTER_MODEL ??
+      process.env.OPENAI_MODEL ??
+      "openai/gpt-4o-mini",
     apiKeyEnvVar: "OPENROUTER_API_KEY",
     baseUrl: "https://openrouter.ai/api/v1",
   });
@@ -69,8 +82,8 @@ export async function createApp(options?: {
       const result = await continueConversation(db, conversationId, content, {
         provider: providerName,
         model,
-        complete: (messages) =>
-          aiSdk.complete(messages, {
+        stream: (messages) =>
+          aiSdk.stream(messages, {
             provider: providerName,
             model,
           }),
@@ -86,6 +99,80 @@ export async function createApp(options?: {
       console.error("Inference failed", error);
       return c.json({ error: "Inference failed", details: message }, 500);
     }
+  });
+
+  app.get("/inference-requests/:id/metrics", async (c) => {
+    const inferenceRequestId = c.req.param("id");
+    const metrics = await getInferenceRequestMetrics(db, inferenceRequestId);
+
+    if (!metrics) {
+      return c.json({ error: "Inference Request not found" }, 404);
+    }
+
+    return c.json(metrics);
+  });
+
+  app.post("/conversations/:id/messages/stream", async (c) => {
+    const conversationId = c.req.param("id");
+    const { content } = await c.req.json<{ content: string }>();
+
+    const conversation = await getConversation(db, conversationId);
+    if (!conversation) {
+      return c.json({ error: "Conversation not found" }, 404);
+    }
+
+    const encoder = new TextEncoder();
+
+    const stream = new ReadableStream<Uint8Array>({
+      async start(controller) {
+        const push = (event: unknown) => {
+          controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
+        };
+
+        try {
+          const result = await continueConversation(
+            db,
+            conversationId,
+            content,
+            {
+              provider: providerName,
+              model,
+              stream: (messages) =>
+                aiSdk.stream(messages, {
+                  provider: providerName,
+                  model,
+                }),
+            },
+            {
+              onTextChunk: async (chunk) => {
+                push({ type: "assistant_delta", delta: chunk });
+              },
+            },
+          );
+
+          if (!result) {
+            push({ type: "error", error: "Conversation not found" });
+            return;
+          }
+
+          push({ type: "completed", result });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Unknown inference error";
+          push({ type: "error", error: message });
+        } finally {
+          controller.close();
+        }
+      },
+    });
+
+    return new Response(stream, {
+      status: 201,
+      headers: {
+        "Content-Type": "application/x-ndjson; charset=utf-8",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+      },
+    });
   });
 
   return app;

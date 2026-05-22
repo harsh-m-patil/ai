@@ -3,6 +3,7 @@ import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 
 export const conversations = sqliteTable("conversations", {
   id: text("id").primaryKey(),
+  title: text("title"),
   status: text("status").notNull().default("active"),
   createdAt: text("created_at")
     .notNull()
@@ -73,3 +74,17 @@ export const inferenceRequests = sqliteTable("inference_requests", {
 
 export type InferenceRequest = typeof inferenceRequests.$inferSelect;
 export type NewInferenceRequest = typeof inferenceRequests.$inferInsert;
+
+export const inferenceEvents = sqliteTable("inference_events", {
+  id: text("id").primaryKey(),
+  inferenceRequestId: text("inference_request_id")
+    .notNull()
+    .references(() => inferenceRequests.id, { onDelete: "cascade" }),
+  sequenceNumber: integer("sequence_number").notNull(),
+  type: text("type", { enum: ["response_start", "first_token", "usage", "request_end"] }).notNull(),
+  createdAt: text("created_at").notNull(),
+  payloadJson: text("payload_json"),
+});
+
+export type InferenceEvent = typeof inferenceEvents.$inferSelect;
+export type NewInferenceEvent = typeof inferenceEvents.$inferInsert;

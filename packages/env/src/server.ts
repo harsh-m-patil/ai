@@ -8,6 +8,8 @@ export const env = createEnv({
     CORS_ORIGIN: z.url(),
     NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
     OPENROUTER_API_KEY: z.string().min(1),
+    OPENROUTER_MODEL: z.string().min(1).optional(),
+    OPENAI_MODEL: z.string().min(1).optional(),
   },
   runtimeEnv: process.env,
   emptyStringAsUndefined: true,

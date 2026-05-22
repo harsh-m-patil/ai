@@ -4,6 +4,7 @@ const BASE_URL = env.VITE_SERVER_URL;
 
 export interface Conversation {
   id: string;
+  title: string | null;
   status: string;
   createdAt: string;
   updatedAt: string;
@@ -92,4 +93,75 @@ export async function continueConversation(
   }
 
   return response.json();
+}
+
+export async function continueConversationStream(
+  conversationId: string,
+  content: string,
+  handlers: {
+    onAssistantDelta: (delta: string) => void;
+  },
+): Promise<ContinueConversationResult> {
+  const response = await fetch(`${BASE_URL}/conversations/${conversationId}/messages/stream`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ content }),
+  });
+
+  if (!response.ok || !response.body) {
+    throw new Error(`Failed to stream conversation: ${response.status}`);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let completed: ContinueConversationResult | null = null;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) {
+      break;
+    }
+
+    buffer += decoder.decode(value, { stream: true });
+
+    while (true) {
+      const newlineIndex = buffer.indexOf("\n");
+      if (newlineIndex === -1) {
+        break;
+      }
+
+      const line = buffer.slice(0, newlineIndex).trim();
+      buffer = buffer.slice(newlineIndex + 1);
+
+      if (!line) {
+        continue;
+      }
+
+      const event = JSON.parse(line) as
+        | { type: "assistant_delta"; delta: string }
+        | { type: "completed"; result: ContinueConversationResult }
+        | { type: "error"; error: string };
+
+      if (event.type === "assistant_delta") {
+        handlers.onAssistantDelta(event.delta);
+      }
+
+      if (event.type === "completed") {
+        completed = event.result;
+      }
+
+      if (event.type === "error") {
+        throw new Error(event.error);
+      }
+    }
+  }
+
+  if (!completed) {
+    throw new Error("Stream ended without completion payload");
+  }
+
+  return completed;
 }

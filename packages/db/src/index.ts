@@ -8,11 +8,42 @@ import type { Message } from "./schema";
 
 export type Db = ReturnType<typeof createDb>;
 
+export type InferenceUsage = {
+  inputTokens?: number;
+  outputTokens?: number;
+  totalTokens?: number;
+};
+
+export type InferenceStreamEvent =
+  | { type: "response_start" }
+  | { type: "first_token" }
+  | { type: "text_delta"; text: string }
+  | { type: "usage"; usage: InferenceUsage }
+  | { type: "request_end" };
+
 export type InferenceRuntime = {
   provider: string;
   model: string;
-  complete: (messages: Pick<Message, "role" | "content">[]) => Promise<string>;
+  stream: (messages: Pick<Message, "role" | "content">[]) => AsyncIterable<InferenceStreamEvent>;
 };
+
+export type ContinueConversationOptions = {
+  onTextChunk?: (chunk: string) => void | Promise<void>;
+};
+
+export function deriveConversationTitle(content: string, maxLength = 48) {
+  const normalized = content.trim().replace(/\s+/g, " ");
+
+  if (!normalized) {
+    return "New conversation";
+  }
+
+  if (normalized.length <= maxLength) {
+    return normalized;
+  }
+
+  return `${normalized.slice(0, maxLength - 1).trimEnd()}…`;
+}
 
 export function createDb(databaseUrl?: string) {
   const client = createClient({
@@ -31,11 +62,24 @@ export async function migrate(db: ReturnType<typeof createDb>) {
   await db.run(`
     CREATE TABLE IF NOT EXISTS conversations (
       id TEXT PRIMARY KEY NOT NULL,
+      title TEXT,
       status TEXT NOT NULL DEFAULT 'active',
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     )
   `);
+
+  try {
+    await db.run("ALTER TABLE conversations ADD COLUMN title TEXT");
+  } catch (error) {
+    const causeText =
+      error && typeof error === "object" && "cause" in error ? String(error.cause) : "";
+    const detail = `${error instanceof Error ? error.message : String(error)} ${causeText}`.toLowerCase();
+
+    if (!detail.includes("duplicate column name")) {
+      throw error;
+    }
+  }
   await db.run(`
     CREATE TABLE IF NOT EXISTS messages (
       id TEXT PRIMARY KEY NOT NULL,
@@ -70,6 +114,17 @@ export async function migrate(db: ReturnType<typeof createDb>) {
       ended_at TEXT
     )
   `);
+  await db.run(`
+    CREATE TABLE IF NOT EXISTS inference_events (
+      id TEXT PRIMARY KEY NOT NULL,
+      inference_request_id TEXT NOT NULL REFERENCES inference_requests(id) ON DELETE CASCADE,
+      sequence_number INTEGER NOT NULL,
+      type TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      payload_json TEXT,
+      UNIQUE(inference_request_id, sequence_number)
+    )
+  `);
 }
 
 export async function listConversations(db: Db) {
@@ -82,6 +137,7 @@ export async function createConversation(db: Db) {
 
   await db.insert(schema.conversations).values({
     id,
+    title: null,
     status: "active",
     createdAt: now,
     updatedAt: now,
@@ -90,16 +146,18 @@ export async function createConversation(db: Db) {
   return fetchOne(db.select().from(schema.conversations).where(eq(schema.conversations.id, id)));
 }
 
+export async function getConversation(db: Db, conversationId: string) {
+  return fetchOne(db.select().from(schema.conversations).where(eq(schema.conversations.id, conversationId)));
+}
+
 export async function continueConversation(
   db: Db,
   conversationId: string,
   userContent: string,
   runtime: InferenceRuntime,
+  options: ContinueConversationOptions = {},
 ) {
-  // 1. Verify conversation exists
-  const conversation = await fetchOne(
-    db.select().from(schema.conversations).where(eq(schema.conversations.id, conversationId)),
-  );
+  const conversation = await getConversation(db, conversationId);
 
   if (!conversation) {
     return null;
@@ -107,7 +165,6 @@ export async function continueConversation(
 
   const now = new Date().toISOString();
 
-  // 2. Persist user message
   const userMessageId = randomUUID();
   await db.insert(schema.messages).values({
     id: userMessageId,
@@ -117,7 +174,16 @@ export async function continueConversation(
     createdAt: now,
   });
 
-  // 3. Create pending turn
+  if (!conversation.title) {
+    await db
+      .update(schema.conversations)
+      .set({
+        title: deriveConversationTitle(userContent),
+        updatedAt: now,
+      })
+      .where(eq(schema.conversations.id, conversationId));
+  }
+
   const turnId = randomUUID();
   await db.insert(schema.turns).values({
     id: turnId,
@@ -127,7 +193,6 @@ export async function continueConversation(
     createdAt: now,
   });
 
-  // 4. Build history for inference
   const history = await db
     .select()
     .from(schema.messages)
@@ -135,7 +200,6 @@ export async function continueConversation(
 
   const inferenceInput = history.map((m) => ({ role: m.role, content: m.content }));
 
-  // 5. Create inference request record
   const inferenceRequestId = randomUUID();
   const startedAt = new Date().toISOString();
   await db.insert(schema.inferenceRequests).values({
@@ -148,33 +212,113 @@ export async function continueConversation(
     startedAt,
   });
 
+  let sequenceNumber = 0;
+  let assistantContent = "";
   let assistantMessageId: string | null = null;
+  const canonicalEventsSeen = new Set<"response_start" | "first_token" | "usage" | "request_end">();
+
+  async function persistCanonicalEvent(
+    type: "response_start" | "first_token" | "usage" | "request_end",
+    payload?: unknown,
+  ) {
+    if (canonicalEventsSeen.has(type)) {
+      return;
+    }
+
+    canonicalEventsSeen.add(type);
+    sequenceNumber += 1;
+
+    const createdAt = new Date().toISOString();
+    await db.insert(schema.inferenceEvents).values({
+      id: randomUUID(),
+      inferenceRequestId,
+      sequenceNumber,
+      type,
+      createdAt,
+      payloadJson: payload ? JSON.stringify(payload) : null,
+    });
+
+    if (type === "response_start") {
+      await db
+        .update(schema.inferenceRequests)
+        .set({ status: "streaming" })
+        .where(eq(schema.inferenceRequests.id, inferenceRequestId));
+    }
+
+    if (type === "request_end") {
+      await db
+        .update(schema.inferenceRequests)
+        .set({ endedAt: createdAt })
+        .where(eq(schema.inferenceRequests.id, inferenceRequestId));
+    }
+  }
 
   try {
-    // 6. Invoke provider
-    const assistantContent = await runtime.complete(inferenceInput);
-    const endedAt = new Date().toISOString();
+    for await (const event of runtime.stream(inferenceInput)) {
+      if (event.type === "response_start") {
+        await persistCanonicalEvent("response_start");
+        continue;
+      }
 
-    // 7. Update inference request to completed
+      if (event.type === "first_token") {
+        await persistCanonicalEvent("first_token");
+        continue;
+      }
+
+      if (event.type === "text_delta") {
+        if (!canonicalEventsSeen.has("response_start")) {
+          await persistCanonicalEvent("response_start");
+        }
+        if (event.text.length > 0 && !canonicalEventsSeen.has("first_token")) {
+          await persistCanonicalEvent("first_token");
+        }
+
+        assistantContent += event.text;
+        if (event.text.length > 0) {
+          await options.onTextChunk?.(event.text);
+        }
+        continue;
+      }
+
+      if (event.type === "usage") {
+        await persistCanonicalEvent("usage", event.usage);
+        continue;
+      }
+
+      if (event.type === "request_end") {
+        await persistCanonicalEvent("request_end");
+      }
+    }
+
+    if (!canonicalEventsSeen.has("response_start")) {
+      await persistCanonicalEvent("response_start");
+    }
+    if (!canonicalEventsSeen.has("usage")) {
+      await persistCanonicalEvent("usage", {});
+    }
+    if (!canonicalEventsSeen.has("request_end")) {
+      await persistCanonicalEvent("request_end");
+    }
+
+    const completedAt = new Date().toISOString();
+
     await db
       .update(schema.inferenceRequests)
-      .set({ status: "completed", outputPreview: assistantContent.slice(0, 200), endedAt })
+      .set({ status: "completed", outputPreview: assistantContent.slice(0, 200), endedAt: completedAt })
       .where(eq(schema.inferenceRequests.id, inferenceRequestId));
 
-    // 8. Persist committed assistant message
     assistantMessageId = randomUUID();
     await db.insert(schema.messages).values({
       id: assistantMessageId,
       conversationId,
       role: "assistant",
       content: assistantContent,
-      createdAt: endedAt,
+      createdAt: completedAt,
     });
 
-    // 9. Complete the turn
     await db
       .update(schema.turns)
-      .set({ status: "completed", committedAssistantMessageId: assistantMessageId, completedAt: endedAt })
+      .set({ status: "completed", committedAssistantMessageId: assistantMessageId, completedAt })
       .where(eq(schema.turns.id, turnId));
   } catch (error) {
     const endedAt = new Date().toISOString();
@@ -192,7 +336,6 @@ export async function continueConversation(
     throw error;
   }
 
-  // 10. Return assembled result
   const [turn, assistantMessage, inferenceRequest] = await Promise.all([
     fetchOne(db.select().from(schema.turns).where(eq(schema.turns.id, turnId))),
     assistantMessageId
@@ -210,6 +353,52 @@ export async function listMessages(db: Db, conversationId: string) {
     .from(schema.messages)
     .where(eq(schema.messages.conversationId, conversationId))
     .orderBy(schema.messages.createdAt);
+}
+
+export async function listInferenceEvents(db: Db, inferenceRequestId: string) {
+  return db
+    .select()
+    .from(schema.inferenceEvents)
+    .where(eq(schema.inferenceEvents.inferenceRequestId, inferenceRequestId))
+    .orderBy(schema.inferenceEvents.sequenceNumber);
+}
+
+export async function getInferenceRequestMetrics(db: Db, inferenceRequestId: string) {
+  const inferenceRequest = await fetchOne(
+    db.select().from(schema.inferenceRequests).where(eq(schema.inferenceRequests.id, inferenceRequestId)),
+  );
+
+  if (!inferenceRequest) {
+    return null;
+  }
+
+  const events = await listInferenceEvents(db, inferenceRequestId);
+  const { firstTokenLatencyMs, totalDurationMs } = computeLatencyFromEvents(events);
+
+  return {
+    inferenceRequestId,
+    firstTokenLatencyMs,
+    totalDurationMs,
+    eventCount: events.length,
+  };
+}
+
+export function computeLatencyFromEvents(events: { type: string; createdAt: string }[]) {
+  const responseStart = events.find((event) => event.type === "response_start");
+  const firstToken = events.find((event) => event.type === "first_token");
+  const requestEnd = events.find((event) => event.type === "request_end");
+
+  const firstTokenLatencyMs =
+    responseStart && firstToken
+      ? new Date(firstToken.createdAt).getTime() - new Date(responseStart.createdAt).getTime()
+      : null;
+
+  const totalDurationMs =
+    responseStart && requestEnd
+      ? new Date(requestEnd.createdAt).getTime() - new Date(responseStart.createdAt).getTime()
+      : null;
+
+  return { firstTokenLatencyMs, totalDurationMs };
 }
 
 export const db = createDb();

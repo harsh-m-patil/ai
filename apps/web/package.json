@@ -11,23 +11,24 @@
     "check-types": "vite build && tsc --noEmit"
   },
   "dependencies": {
-    "@tardis/env": "workspace:*",
-    "@tardis/ui": "workspace:*",
     "@hookform/resolvers": "^5.2.2",
     "@tailwindcss/vite": "^4.2.2",
     "@tanstack/react-router": "^1.168.22",
+    "@tardis/env": "workspace:*",
+    "@tardis/ui": "workspace:*",
     "dotenv": "catalog:",
     "lucide-react": "^1.8.0",
     "next-themes": "catalog:",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
     "sonner": "^2.0.7",
+    "streamdown": "^2.5.0",
     "zod": "catalog:"
   },
   "devDependencies": {
-    "@tardis/config": "workspace:*",
     "@tanstack/react-router-devtools": "^1.166.13",
     "@tanstack/router-plugin": "^1.167.22",
+    "@tardis/config": "workspace:*",
     "@types/node": "catalog:",
     "@types/react": "^19.2.14",
     "@types/react-dom": "catalog:",

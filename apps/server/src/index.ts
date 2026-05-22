@@ -6,6 +6,7 @@ import { createApp } from "./app";
 const app = await createApp({
   databaseUrl: env.DATABASE_URL,
   corsOrigin: env.CORS_ORIGIN,
+  model: env.OPENROUTER_MODEL ?? env.OPENAI_MODEL,
 });
 
 serve(
