@@ -9,11 +9,17 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as ObservabilityRouteImport } from './routes/observability'
 import { Route as ConversationsRouteImport } from './routes/conversations'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ConversationsIndexRouteImport } from './routes/conversations.index'
 import { Route as ConversationsIdRouteImport } from './routes/conversations.$id'
 
+const ObservabilityRoute = ObservabilityRouteImport.update({
+  id: '/observability',
+  path: '/observability',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ConversationsRoute = ConversationsRouteImport.update({
   id: '/conversations',
   path: '/conversations',
@@ -38,11 +44,13 @@ const ConversationsIdRoute = ConversationsIdRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/conversations': typeof ConversationsRouteWithChildren
+  '/observability': typeof ObservabilityRoute
   '/conversations/$id': typeof ConversationsIdRoute
   '/conversations/': typeof ConversationsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/observability': typeof ObservabilityRoute
   '/conversations/$id': typeof ConversationsIdRoute
   '/conversations': typeof ConversationsIndexRoute
 }
@@ -50,18 +58,25 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/conversations': typeof ConversationsRouteWithChildren
+  '/observability': typeof ObservabilityRoute
   '/conversations/$id': typeof ConversationsIdRoute
   '/conversations/': typeof ConversationsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/conversations' | '/conversations/$id' | '/conversations/'
+  fullPaths:
+    | '/'
+    | '/conversations'
+    | '/observability'
+    | '/conversations/$id'
+    | '/conversations/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/conversations/$id' | '/conversations'
+  to: '/' | '/observability' | '/conversations/$id' | '/conversations'
   id:
     | '__root__'
     | '/'
     | '/conversations'
+    | '/observability'
     | '/conversations/$id'
     | '/conversations/'
   fileRoutesById: FileRoutesById
@@ -69,10 +84,18 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   ConversationsRoute: typeof ConversationsRouteWithChildren
+  ObservabilityRoute: typeof ObservabilityRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/observability': {
+      id: '/observability'
+      path: '/observability'
+      fullPath: '/observability'
+      preLoaderRoute: typeof ObservabilityRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/conversations': {
       id: '/conversations'
       path: '/conversations'
@@ -121,6 +144,7 @@ const ConversationsRouteWithChildren = ConversationsRoute._addFileChildren(
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ConversationsRoute: ConversationsRouteWithChildren,
+  ObservabilityRoute: ObservabilityRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

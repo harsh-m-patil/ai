@@ -22,6 +22,7 @@
     "embla-carousel-react": "^8.6.0",
     "input-otp": "^1.4.2",
     "lucide-react": "^0.546.0",
+    "motion": "^12.40.0",
     "next-themes": "catalog:",
     "react": "^19.2.3",
     "react-day-picker": "^10.0.1",

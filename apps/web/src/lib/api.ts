@@ -47,6 +47,49 @@ export interface ContinueConversationResult {
   inferenceRequest: InferenceRequest;
 }
 
+export interface ObservableInferenceRequest {
+  id: string;
+  conversationId: string;
+  turnId: string;
+  attemptNumber: number;
+  provider: string;
+  model: string;
+  status: InferenceRequest["status"];
+  inputPreview: string | null;
+  outputPreview: string | null;
+  startedAt: string;
+  endedAt: string | null;
+}
+
+export interface InferenceRequestMetrics {
+  inferenceRequestId: string;
+  firstTokenLatencyMs: number | null;
+  totalDurationMs: number | null;
+  eventCount: number;
+}
+
+export interface InferenceRequestInspection {
+  inferenceRequest: InferenceRequest;
+  events: Array<{
+    id: string;
+    inferenceRequestId: string;
+    sequenceNumber: number;
+    type: "response_start" | "first_token" | "usage" | "request_end";
+    createdAt: string;
+    payload: unknown;
+  }>;
+  summary: {
+    eventCount: number;
+    firstTokenLatencyMs: number | null;
+    totalDurationMs: number | null;
+    usage: {
+      inputTokens?: number;
+      outputTokens?: number;
+      totalTokens?: number;
+    } | null;
+  };
+}
+
 export async function listConversations(): Promise<Conversation[]> {
   const response = await fetch(`${BASE_URL}/conversations`);
   if (!response.ok) {
@@ -74,6 +117,35 @@ export async function listMessages(conversationId: string): Promise<Message[]> {
   }
   const data = await response.json();
   return data.messages;
+}
+
+export async function listInferenceRequests(): Promise<ObservableInferenceRequest[]> {
+  const response = await fetch(`${BASE_URL}/inference-requests`);
+  if (!response.ok) {
+    throw new Error(`Failed to list inference requests: ${response.status}`);
+  }
+  const data = await response.json();
+  return data.inferenceRequests;
+}
+
+export async function getInferenceRequestMetrics(
+  inferenceRequestId: string,
+): Promise<InferenceRequestMetrics> {
+  const response = await fetch(`${BASE_URL}/inference-requests/${inferenceRequestId}/metrics`);
+  if (!response.ok) {
+    throw new Error(`Failed to get inference request metrics: ${response.status}`);
+  }
+  return response.json();
+}
+
+export async function getInferenceRequestInspection(
+  inferenceRequestId: string,
+): Promise<InferenceRequestInspection> {
+  const response = await fetch(`${BASE_URL}/inference-requests/${inferenceRequestId}`);
+  if (!response.ok) {
+    throw new Error(`Failed to get inference request inspection: ${response.status}`);
+  }
+  return response.json();
 }
 
 export async function continueConversation(

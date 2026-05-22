@@ -479,6 +479,26 @@ export async function listMessages(db: Db, conversationId: string) {
     .orderBy(schema.messages.createdAt);
 }
 
+export async function listInferenceRequests(db: Db) {
+  return db
+    .select({
+      id: schema.inferenceRequests.id,
+      conversationId: schema.turns.conversationId,
+      turnId: schema.inferenceRequests.turnId,
+      attemptNumber: schema.inferenceRequests.attemptNumber,
+      provider: schema.inferenceRequests.provider,
+      model: schema.inferenceRequests.model,
+      status: schema.inferenceRequests.status,
+      inputPreview: schema.inferenceRequests.inputPreview,
+      outputPreview: schema.inferenceRequests.outputPreview,
+      startedAt: schema.inferenceRequests.startedAt,
+      endedAt: schema.inferenceRequests.endedAt,
+    })
+    .from(schema.inferenceRequests)
+    .innerJoin(schema.turns, eq(schema.turns.id, schema.inferenceRequests.turnId))
+    .orderBy(desc(schema.inferenceRequests.startedAt));
+}
+
 export async function listInferenceEvents(db: Db, inferenceRequestId: string) {
   return db
     .select()
