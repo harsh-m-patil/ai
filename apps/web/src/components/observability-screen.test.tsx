@@ -22,6 +22,45 @@ vi.mock("@/components/evilcharts/charts/bar-chart", () => ({
   YAxis: () => null,
 }));
 
+vi.mock("@tardis/ui/components/badge", () => ({
+  Badge: ({ children }: { children: ReactNode }) => <span>{children}</span>,
+}));
+
+vi.mock("@tardis/ui/components/card", () => ({
+  Card: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  CardContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  CardDescription: ({ children }: { children: ReactNode }) => <p>{children}</p>,
+  CardHeader: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  CardTitle: ({ children }: { children: ReactNode }) => <h3>{children}</h3>,
+}));
+
+vi.mock("@tardis/ui/components/separator", () => ({
+  Separator: () => <hr />,
+}));
+
+vi.mock("@tardis/ui/components/table", () => ({
+  Table: ({ children }: { children: ReactNode }) => <table>{children}</table>,
+  TableBody: ({ children }: { children: ReactNode }) => <tbody>{children}</tbody>,
+  TableCell: ({ children }: { children: ReactNode }) => <td>{children}</td>,
+  TableHead: ({ children }: { children: ReactNode }) => <th>{children}</th>,
+  TableHeader: ({ children }: { children: ReactNode }) => <thead>{children}</thead>,
+  TableRow: ({ children }: { children: ReactNode }) => <tr>{children}</tr>,
+}));
+
+vi.mock("@tardis/ui/components/tabs", () => ({
+  Tabs: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  TabsContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  TabsList: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  TabsTrigger: ({ children }: { children: ReactNode }) => <button>{children}</button>,
+}));
+
+vi.mock("lucide-react", () => ({
+  Activity: () => null,
+  Clock: () => null,
+  Hash: () => null,
+  Zap: () => null,
+}));
+
 import { ObservabilityScreen } from "./observability-screen";
 
 describe("ObservabilityScreen", () => {
