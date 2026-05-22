@@ -8,8 +8,8 @@ import type { Message } from "./schema";
 
 export type Db = ReturnType<typeof createDb>;
 
-export type Provider = {
-  name: string;
+export type InferenceRuntime = {
+  provider: string;
   model: string;
   complete: (messages: Pick<Message, "role" | "content">[]) => Promise<string>;
 };
@@ -94,7 +94,7 @@ export async function continueConversation(
   db: Db,
   conversationId: string,
   userContent: string,
-  provider: Provider,
+  runtime: InferenceRuntime,
 ) {
   // 1. Verify conversation exists
   const conversation = await fetchOne(
@@ -141,43 +141,63 @@ export async function continueConversation(
   await db.insert(schema.inferenceRequests).values({
     id: inferenceRequestId,
     turnId,
-    provider: provider.name,
-    model: provider.model,
+    provider: runtime.provider,
+    model: runtime.model,
     status: "pending",
     inputPreview: userContent.slice(0, 200),
     startedAt,
   });
 
-  // 6. Invoke provider
-  const assistantContent = await provider.complete(inferenceInput);
-  const endedAt = new Date().toISOString();
+  let assistantMessageId: string | null = null;
 
-  // 7. Update inference request to completed
-  await db
-    .update(schema.inferenceRequests)
-    .set({ status: "completed", outputPreview: assistantContent.slice(0, 200), endedAt })
-    .where(eq(schema.inferenceRequests.id, inferenceRequestId));
+  try {
+    // 6. Invoke provider
+    const assistantContent = await runtime.complete(inferenceInput);
+    const endedAt = new Date().toISOString();
 
-  // 8. Persist committed assistant message
-  const assistantMessageId = randomUUID();
-  await db.insert(schema.messages).values({
-    id: assistantMessageId,
-    conversationId,
-    role: "assistant",
-    content: assistantContent,
-    createdAt: endedAt,
-  });
+    // 7. Update inference request to completed
+    await db
+      .update(schema.inferenceRequests)
+      .set({ status: "completed", outputPreview: assistantContent.slice(0, 200), endedAt })
+      .where(eq(schema.inferenceRequests.id, inferenceRequestId));
 
-  // 9. Complete the turn
-  await db
-    .update(schema.turns)
-    .set({ status: "completed", committedAssistantMessageId: assistantMessageId, completedAt: endedAt })
-    .where(eq(schema.turns.id, turnId));
+    // 8. Persist committed assistant message
+    assistantMessageId = randomUUID();
+    await db.insert(schema.messages).values({
+      id: assistantMessageId,
+      conversationId,
+      role: "assistant",
+      content: assistantContent,
+      createdAt: endedAt,
+    });
+
+    // 9. Complete the turn
+    await db
+      .update(schema.turns)
+      .set({ status: "completed", committedAssistantMessageId: assistantMessageId, completedAt: endedAt })
+      .where(eq(schema.turns.id, turnId));
+  } catch (error) {
+    const endedAt = new Date().toISOString();
+
+    await db
+      .update(schema.inferenceRequests)
+      .set({ status: "failed", endedAt })
+      .where(eq(schema.inferenceRequests.id, inferenceRequestId));
+
+    await db
+      .update(schema.turns)
+      .set({ status: "failed", completedAt: endedAt })
+      .where(eq(schema.turns.id, turnId));
+
+    throw error;
+  }
 
   // 10. Return assembled result
   const [turn, assistantMessage, inferenceRequest] = await Promise.all([
     fetchOne(db.select().from(schema.turns).where(eq(schema.turns.id, turnId))),
-    fetchOne(db.select().from(schema.messages).where(eq(schema.messages.id, assistantMessageId))),
+    assistantMessageId
+      ? fetchOne(db.select().from(schema.messages).where(eq(schema.messages.id, assistantMessageId)))
+      : Promise.resolve(undefined),
     fetchOne(db.select().from(schema.inferenceRequests).where(eq(schema.inferenceRequests.id, inferenceRequestId))),
   ]);
 

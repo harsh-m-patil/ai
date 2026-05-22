@@ -1,18 +1,32 @@
-import { createDb, createConversation, listConversations, listMessages, continueConversation, migrate, type Provider } from "@ai/db";
+import { createAiSdk, createOpenAICompatibleAdapter, type AiSdk } from "@ai/ai";
+import { createDb, createConversation, listConversations, listMessages, continueConversation, migrate } from "@ai/db";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 
-export const testProvider: Provider = {
-  name: "test",
-  model: "test-model",
-  complete: async () => "I am a deterministic test response.",
-};
-
-export async function createApp(options?: { databaseUrl?: string; corsOrigin?: string; provider?: Provider }) {
+export async function createApp(options?: {
+  databaseUrl?: string;
+  corsOrigin?: string;
+  aiSdk?: AiSdk;
+  model?: string;
+}) {
   const app = new Hono();
   const db = createDb(options?.databaseUrl);
-  const provider = options?.provider ?? testProvider;
+
+  if (!options?.aiSdk && !process.env.OPENROUTER_API_KEY) {
+    throw new Error("Missing OPENROUTER_API_KEY");
+  }
+
+  const provider = createOpenAICompatibleAdapter({
+    name: "openrouter",
+    defaultModel: options?.model ?? process.env.OPENAI_MODEL ?? "nvidia/nemotron-3-super-120b-a12b:free",
+    apiKeyEnvVar: "OPENROUTER_API_KEY",
+    baseUrl: "https://openrouter.ai/api/v1",
+  });
+
+  const aiSdk = options?.aiSdk ?? createAiSdk([provider]);
+  const providerName = provider.name;
+  const model = provider.defaultModel;
 
   await migrate(db);
 
@@ -51,13 +65,27 @@ export async function createApp(options?: { databaseUrl?: string; corsOrigin?: s
     const conversationId = c.req.param("id");
     const { content } = await c.req.json<{ content: string }>();
 
-    const result = await continueConversation(db, conversationId, content, provider);
+    try {
+      const result = await continueConversation(db, conversationId, content, {
+        provider: providerName,
+        model,
+        complete: (messages) =>
+          aiSdk.complete(messages, {
+            provider: providerName,
+            model,
+          }),
+      });
 
-    if (!result) {
-      return c.json({ error: "Conversation not found" }, 404);
+      if (!result) {
+        return c.json({ error: "Conversation not found" }, 404);
+      }
+
+      return c.json(result, 201);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown inference error";
+      console.error("Inference failed", error);
+      return c.json({ error: "Inference failed", details: message }, 500);
     }
-
-    return c.json(result, 201);
   });
 
   return app;
