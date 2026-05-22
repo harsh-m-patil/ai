@@ -5,7 +5,7 @@ const prompt = process.argv.slice(2).filter((arg) => arg !== "--").join(" ") || 
 const sdk = createAiSdk([
   createOpenAICompatibleAdapter({
     name: "openrouter",
-    defaultModel: process.env.OPENAI_MODEL ?? "nvidia/nemotron-3-super-120b-a12b:free",
+    defaultModel: process.env.OPENROUTER_MODEL ?? process.env.OPENAI_MODEL ?? "openai/gpt-4o-mini",
     apiKeyEnvVar: "OPENROUTER_API_KEY",
     baseUrl: "https://openrouter.ai/api/v1",
   }),

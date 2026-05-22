@@ -20,10 +20,24 @@ export type ProviderCompleteOptions = {
   maxTokens?: number;
 };
 
+export type InferenceUsage = {
+  inputTokens?: number;
+  outputTokens?: number;
+  totalTokens?: number;
+};
+
+export type StreamEvent =
+  | { type: "response_start" }
+  | { type: "first_token" }
+  | { type: "text_delta"; text: string }
+  | { type: "usage"; usage: InferenceUsage }
+  | { type: "request_end" };
+
 export type ProviderAdapter = {
   name: string;
   defaultModel: string;
   complete: (messages: ChatMessage[], options: ProviderCompleteOptions) => Promise<string>;
+  stream?: (messages: ChatMessage[], options: ProviderCompleteOptions) => AsyncIterable<StreamEvent>;
 };
 
 export type ProviderRegistry = {
@@ -34,6 +48,7 @@ export type ProviderRegistry = {
 export type AiSdk = {
   registerProvider: (provider: ProviderAdapter) => void;
   complete: (messages: ChatMessage[], options: CompleteOptions) => Promise<string>;
+  stream: (messages: ChatMessage[], options: CompleteOptions) => AsyncIterable<StreamEvent>;
 };
 
 export function createProviderRegistry(initialProviders: ProviderAdapter[] = []): ProviderRegistry {
@@ -56,22 +71,111 @@ export function createProviderRegistry(initialProviders: ProviderAdapter[] = [])
 export function createAiSdk(initialProviders: ProviderAdapter[] = []): AiSdk {
   const registry = createProviderRegistry(initialProviders);
 
+  function resolveProvider(options: CompleteOptions): ProviderAdapter {
+    const provider = registry.resolve(options.provider);
+
+    if (!provider) {
+      throw new Error(`Provider '${options.provider}' is not registered`);
+    }
+
+    return provider;
+  }
+
+  function toProviderOptions(provider: ProviderAdapter, options: CompleteOptions): ProviderCompleteOptions {
+    return {
+      model: options.model ?? provider.defaultModel,
+      temperature: options.temperature,
+      maxTokens: options.maxTokens,
+    };
+  }
+
   return {
     registerProvider(provider) {
       registry.register(provider);
     },
     async complete(messages, options) {
-      const provider = registry.resolve(options.provider);
+      const provider = resolveProvider(options);
 
-      if (!provider) {
-        throw new Error(`Provider '${options.provider}' is not registered`);
+      return provider.complete(messages, toProviderOptions(provider, options));
+    },
+    async *stream(messages, options) {
+      const provider = resolveProvider(options);
+      const providerOptions = toProviderOptions(provider, options);
+
+      if (!provider.stream) {
+        console.warn(
+          `[ai-sdk] Provider '${provider.name}' does not implement stream(); falling back to complete() (non-token streaming).`,
+        );
+        const content = await provider.complete(messages, providerOptions);
+        yield { type: "response_start" } as const;
+        if (content.length > 0) {
+          yield { type: "first_token" } as const;
+          yield { type: "text_delta", text: content } as const;
+        }
+        yield { type: "usage", usage: {} } as const;
+        yield { type: "request_end" } as const;
+        return;
       }
 
-      return provider.complete(messages, {
-        model: options.model ?? provider.defaultModel,
-        temperature: options.temperature,
-        maxTokens: options.maxTokens,
-      });
+      let sawResponseStart = false;
+      let sawFirstToken = false;
+      let sawUsage = false;
+      let sawRequestEnd = false;
+
+      for await (const event of provider.stream(messages, providerOptions)) {
+        if (event.type === "response_start") {
+          sawResponseStart = true;
+          yield event;
+          continue;
+        }
+
+        if (!sawResponseStart) {
+          sawResponseStart = true;
+          yield { type: "response_start" } as const;
+        }
+
+        if (event.type === "first_token") {
+          if (!sawFirstToken) {
+            sawFirstToken = true;
+            yield event;
+          }
+          continue;
+        }
+
+        if (event.type === "text_delta") {
+          if (event.text.length > 0 && !sawFirstToken) {
+            sawFirstToken = true;
+            yield { type: "first_token" } as const;
+          }
+          yield event;
+          continue;
+        }
+
+        if (event.type === "usage") {
+          if (!sawUsage) {
+            sawUsage = true;
+            yield event;
+          }
+          continue;
+        }
+
+        if (event.type === "request_end") {
+          if (!sawRequestEnd) {
+            sawRequestEnd = true;
+            yield event;
+          }
+        }
+      }
+
+      if (!sawResponseStart) {
+        yield { type: "response_start" } as const;
+      }
+      if (!sawUsage) {
+        yield { type: "usage", usage: {} } as const;
+      }
+      if (!sawRequestEnd) {
+        yield { type: "request_end" } as const;
+      }
     },
   };
 }
@@ -125,6 +229,56 @@ export function createOpenAICompatibleAdapter(options: OpenAICompatibleAdapterOp
       }
 
       return content;
+    },
+    async *stream(messages, config) {
+      const apiKey = options.apiKey ?? process.env[options.apiKeyEnvVar ?? "OPENAI_API_KEY"];
+
+      if (!apiKey) {
+        throw new Error(`Missing API key for provider '${options.name}'`);
+      }
+
+      const client = new OpenAI({
+        apiKey,
+        baseURL: toOpenAiSdkBaseUrl(baseUrl),
+        defaultHeaders: options.defaultHeaders,
+        fetch: options.fetchFn,
+      });
+
+      yield { type: "response_start" } as const;
+
+      let sawFirstToken = false;
+      let usage: InferenceUsage | undefined;
+
+      const stream = await client.chat.completions.create({
+        model: config.model,
+        messages: messages.map((message) => ({ role: message.role, content: message.content })),
+        temperature: config.temperature,
+        max_tokens: config.maxTokens,
+        stream: true,
+        stream_options: { include_usage: true },
+      });
+
+      for await (const chunk of stream) {
+        if (chunk.usage) {
+          usage = {
+            inputTokens: chunk.usage.prompt_tokens ?? undefined,
+            outputTokens: chunk.usage.completion_tokens ?? undefined,
+            totalTokens: chunk.usage.total_tokens ?? undefined,
+          };
+        }
+
+        const delta = chunk.choices?.[0]?.delta?.content;
+        if (typeof delta === "string" && delta.length > 0) {
+          if (!sawFirstToken) {
+            sawFirstToken = true;
+            yield { type: "first_token" } as const;
+          }
+          yield { type: "text_delta", text: delta } as const;
+        }
+      }
+
+      yield { type: "usage", usage: usage ?? {} } as const;
+      yield { type: "request_end" } as const;
     },
   };
 }

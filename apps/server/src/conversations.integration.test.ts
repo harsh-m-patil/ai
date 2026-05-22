@@ -3,11 +3,24 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createAiSdk } from "@tardis/ai";
+import { computeLatencyFromEvents, createDb, listInferenceEvents } from "@tardis/db";
 
 import { createApp } from "./app";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const json = (res: Response) => res.json() as Promise<any>;
+
+async function readNdjson(response: Response) {
+  const events: Array<Record<string, unknown>> = [];
+  const text = await response.text();
+  const lines = text.split("\n").map((line) => line.trim()).filter(Boolean);
+
+  for (const line of lines) {
+    events.push(JSON.parse(line) as Record<string, unknown>);
+  }
+
+  return events;
+}
 
 describe("Conversation API", () => {
   let directory: string;
@@ -86,6 +99,10 @@ describe("Conversation API", () => {
       model: expect.any(String),
       status: "completed",
     });
+
+    const listResponse = await app.request("/conversations");
+    const { conversations } = await json(listResponse);
+    expect(conversations[0].title).toBe("Hello");
   });
 
   it("POST /conversations/:id/messages returns 404 for a non-existent Conversation", async () => {
@@ -135,6 +152,7 @@ describe("Conversation API", () => {
     const customApp = await createApp({
       databaseUrl: `file:${join(customDir, "test.db")}`,
       aiSdk: customSdk,
+      model: "openai/gpt-4o",
     });
 
     try {
@@ -186,6 +204,95 @@ describe("Conversation API", () => {
     } finally {
       await rm(failingDir, { recursive: true, force: true });
     }
+  });
+
+  it("POST /conversations/:id/messages/stream returns incremental assistant deltas before completion", async () => {
+    const streamingSdk = createAiSdk([
+      {
+        name: "openrouter",
+        defaultModel: "openai/gpt-4o",
+        complete: async () => "unused",
+        async *stream() {
+          yield { type: "response_start" } as const;
+          yield { type: "text_delta", text: "Hello" } as const;
+          yield { type: "text_delta", text: " world" } as const;
+          yield {
+            type: "usage",
+            usage: { inputTokens: 3, outputTokens: 2, totalTokens: 5 },
+          } as const;
+          yield { type: "request_end" } as const;
+        },
+      },
+    ]);
+
+    const streamingDir = await mkdtemp(join(tmpdir(), "tardis-server-streaming-"));
+    const streamingDatabaseUrl = `file:${join(streamingDir, "test.db")}`;
+    const streamingApp = await createApp({
+      databaseUrl: streamingDatabaseUrl,
+      aiSdk: streamingSdk,
+    });
+
+    try {
+      const createRes = await streamingApp.request("/conversations", { method: "POST" });
+      const { conversation } = await json(createRes);
+
+      const streamRes = await streamingApp.request(`/conversations/${conversation.id}/messages/stream`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: "Hi" }),
+      });
+
+      expect(streamRes.status).toBe(201);
+      const events = await readNdjson(streamRes);
+
+      expect(events[0]).toEqual({ type: "assistant_delta", delta: "Hello" });
+      expect(events[1]).toEqual({ type: "assistant_delta", delta: " world" });
+      expect(events.at(-1)?.type).toBe("completed");
+
+      const completed = events.at(-1) as { type: "completed"; result: { inferenceRequest: { id: string } } };
+      const db = createDb(streamingDatabaseUrl);
+      const lifecycleEvents = await listInferenceEvents(db, completed.result.inferenceRequest.id);
+
+      expect(lifecycleEvents.map((event) => event.type)).toEqual([
+        "response_start",
+        "first_token",
+        "usage",
+        "request_end",
+      ]);
+
+      const latency = computeLatencyFromEvents(lifecycleEvents);
+      expect(latency.firstTokenLatencyMs).not.toBeNull();
+      expect(latency.totalDurationMs).not.toBeNull();
+      expect(latency.totalDurationMs).toBeGreaterThanOrEqual(latency.firstTokenLatencyMs ?? 0);
+    } finally {
+      await rm(streamingDir, { recursive: true, force: true });
+    }
+  });
+
+  it("GET /inference-requests/:id/metrics returns latency metrics for an Inference Request", async () => {
+    const createRes = await app.request("/conversations", { method: "POST" });
+    const { conversation } = await json(createRes);
+
+    const msgRes = await app.request(`/conversations/${conversation.id}/messages`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content: "Measure latency" }),
+    });
+
+    expect(msgRes.status).toBe(201);
+    const { inferenceRequest } = await json(msgRes);
+
+    const metricsRes = await app.request(`/inference-requests/${inferenceRequest.id}/metrics`);
+    expect(metricsRes.status).toBe(200);
+
+    const metricsBody = await json(metricsRes);
+    expect(metricsBody).toMatchObject({
+      inferenceRequestId: inferenceRequest.id,
+      firstTokenLatencyMs: expect.any(Number),
+      totalDurationMs: expect.any(Number),
+      eventCount: 4,
+    });
+    expect(metricsBody.totalDurationMs).toBeGreaterThanOrEqual(metricsBody.firstTokenLatencyMs);
   });
 
   it("GET /conversations returns multiple Conversations ordered by most recent first", async () => {

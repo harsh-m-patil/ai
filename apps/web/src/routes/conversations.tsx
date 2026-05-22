@@ -1,5 +1,5 @@
 import { Link, Outlet, createFileRoute, useNavigate, useRouter } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { MessageSquare, Plus, Sparkles } from "lucide-react";
 
 import { Button } from "@tardis/ui/components/button";
@@ -21,6 +21,10 @@ import {
 } from "@tardis/ui/components/sidebar";
 
 import { type Conversation, createConversation, listConversations } from "@/lib/api";
+import {
+  getPendingConversationTitle,
+  subscribePendingConversationTitles,
+} from "@/lib/conversation-titles";
 import { ModeToggle } from "@/components/mode-toggle";
 
 export const Route = createFileRoute("/conversations")({
@@ -129,7 +133,14 @@ function ConversationsLayout() {
 }
 
 function ConversationItem({ conversation }: { conversation: Conversation }) {
+  const pendingTitle = useSyncExternalStore(
+    subscribePendingConversationTitles,
+    () => getPendingConversationTitle(conversation.id),
+    () => null,
+  );
+
   const shortId = conversation.id.slice(0, 8);
+  const label = conversation.title ?? pendingTitle ?? `${shortId}...`;
 
   return (
     <SidebarMenuItem>
@@ -141,10 +152,10 @@ function ConversationItem({ conversation }: { conversation: Conversation }) {
             activeProps={{ className: "bg-sidebar-accent text-sidebar-accent-foreground" }}
           />
         }
-        tooltip={conversation.id}
+        tooltip={conversation.title ?? conversation.id}
       >
         <MessageSquare className="size-3.5" />
-        <span>{shortId}...</span>
+        <span>{label}</span>
       </SidebarMenuButton>
     </SidebarMenuItem>
   );
