@@ -83,7 +83,7 @@ export default function HomePage() {
         <h2 className="text-xl font-semibold">Runtime API at a glance</h2>
         <div className="rounded-lg border">
           {apiLinks.map((endpoint) => (
-            <div key={endpoint.path} className="flex flex-wrap items-center justify-between gap-3 border-b p-4 last:border-b-0">
+            <div key={`${endpoint.method}:${endpoint.path}`} className="flex flex-wrap items-center justify-between gap-3 border-b p-4 last:border-b-0">
               <div>
                 <p className="text-sm font-medium">{endpoint.title}</p>
                 <code className="text-xs text-fd-muted-foreground">{endpoint.path}</code>
